@@ -1,51 +1,85 @@
+
 name: Build Noise Guardian APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle
+      - name: Locate and extract source ZIP
+        shell: bash
+        run: |
+          set -e
+          ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Source ZIP file not found."
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
+          mkdir -p "$GITHUB_WORKSPACE/project"
+          unzip -o "$ZIP_FILE" -d "$GITHUB_WORKSPACE/project"
+
+          SETTINGS_FILE=$(find "$GITHUB_WORKSPACE/project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Gradle settings file not found in ZIP."
+            find "$GITHUB_WORKSPACE/project" -maxdepth 5 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project found: $PROJECT_DIR"
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract ZIP
+      - name: Build Debug APK
         run: |
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP file not found"
+          set -e
+          cd "$PROJECT_DIR"
+          gradle assembleDebug
+
+      - name: Find APK
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK not generated."
             exit 1
           fi
-          mkdir -p project
-          unzip -o "$ZIP_FILE" -d project
-          find project -name settings.gradle -o -name settings.gradle.kts
-
-      - name: Build APK
-        run: |
-          ROOT=$(dirname "$(find project -name settings.gradle -o -name settings.gradle.kts | head -n 1)")
-          cd "$ROOT"
-          gradle assembleDebug
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "APK found: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NoiseGuardian-APK
-          path: project/**/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+          retention-days: 7
