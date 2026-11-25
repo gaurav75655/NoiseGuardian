@@ -1,35 +1,17 @@
 name: Build Noise Guardian APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Locate ZIP
-        run: |
-          echo "Repository files:"
-          ls -la
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP file not found!"
-            exit 1
-          fi
-          echo "Found: $ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
-
-      - name: Extract source
-        run: |
-          mkdir -p unpacked
-          unzip -o "$ZIP_FILE" -d unpacked
-          ls -la unpacked
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -45,13 +27,18 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Extract source
+        run: |
+          unzip -o NoiseGuardian-Android-Source.zip -d project
+          find project -maxdepth 3 -type f | head -50
+
       - name: Build APK
         run: |
-          cd unpacked/NoiseGuardian
+          cd project
           gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NoiseGuardian-APK
-          path: unpacked/NoiseGuardian/app/build/outputs/apk/debug/app-debug.apk
+          path: project/app/build/outputs/apk/debug/app-debug.apk
